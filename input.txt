@@ -1,0 +1,30 @@
+time(show_piano([r(1), r(2)], [(art(1), 1), (art(3), 1)])), statistics.
+
+time(show_piano([r(1), r(2)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(4), 8), (art(8), 6)])), statistics.
+
+time(show_piano([r(1), r(2)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(17), 8), (art(13), 6)])), statistics.
+
+time(show_piano([r(1), r(2)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(17), 8), (art(13), 6), (art(16), 2)])), statistics.
+
+time(show_piano([r(1), r(2)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(17), 8), (art(13), 6), (art(16), 2), (art(3), 7)])), statistics.
+
+time(show_piano([r(1), r(2)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(4), 8), (art(8), 6), (art(11), 7), (art(5), 4), (art(13), 8), (art(14), 9), (art(17), 2)])), statistics.
+
+
+
+time(show_piano([r(1)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(4), 8), (art(8), 6)])), statistics.
+time(show_piano([r(1), r(2)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(4), 8), (art(8), 6)])), statistics.
+time(show_piano([r(1), r(2), r(3)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(4), 8), (art(8), 6)])), statistics.
+
+time(show_piano([r(1)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(7), 8), (art(12), 6), (art(5), 2)])), statistics.
+time(show_piano([r(1), r(2)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(7), 8), (art(12), 6), (art(5), 2)])), statistics.
+time(show_piano([r(1), r(2), r(3)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(7), 8), (art(12), 6), (art(5), 2)])), statistics.
+
+time(show_piano([r(1)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(3), 8), (art(5), 6), (art(8), 2), (art(11), 7)])), statistics.
+time(show_piano([r(1), r(2)], [(art(1), 5), (art(2), 6), (art(6), 4), (art(3), 8), (art(5), 6), (art(8), 2), (art(11), 7)])), statistics.
+
+
+
+show_piano([r(1)], [(art(1), 10), (art(3), 10), (art(5), 10)]).
+show_piano([r(1), r(2)], [(art(1), 10), (art(3), 10), (art(5), 10)]).
+show_piano([r(1), r(2), r(3)], [(art(1), 10), (art(3), 10), (art(5), 10)]).

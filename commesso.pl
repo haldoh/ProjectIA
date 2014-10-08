@@ -1,0 +1,302 @@
+:- use_module('types/chk').
+
+:- no_check(setof(_,_,_)).
+
+:- consult(h).
+% TIPI
+type articolo --> art(integer).
+type armadio --> b; a1; a2; a3; a4;a5;a6.
+type robot --> r(integer).
+type luogo --> l(armadio).
+type fluent --> posizione(robot, luogo); %la posizione del robot
+                porta(robot, articolo, integer); %il robot trasporta n copie di un articolo
+		recuperato(articolo, integer); %articolo depositato al banco
+		ordine(articolo, integer); %ordine da soddisfare
+		scorta_ins(articolo, integer, integer). %ordine non eseguito o modificato a causa di scorte insufficienti
+type azione --> starting; initialized; %stati iniziali
+                va(robot, luogo, luogo); %movimento
+                prende(robot, articolo, integer); %prende articolo
+		scarica(robot, articolo, integer); %scarica articolo al banco
+		no_azione(robot). %il robot non esegue nessun azione
+type list(X) --> []; [X|list(X)].
+type stato --> st(robot, azione, list(fluent)).
+                % Stati dello spazio degli stati.
+                % Significato di st(Robot, Act, S):  Raggiunto lo stato-fluenti S
+                % dopo che Robot ha eseguito l'operazione Act
+
+% capacità trasporto robot
+:- dynamic capacita/1.
+capacita(10).
+
+% PREDICATI
+% percorso(?L1,?L2,?Lung), è un predicato di grounding
+% significato: il percorso minimo da L1 a L2 è lungo Lung
+% Definisco percorso simmetrico in base alla distanza fra
+% due luoghi, definita in una base dati asimmetrica per
+% evitare loop
+percorso(A, B, C) :- dist(A, B, C); dist(B, A, C).
+
+% Arco per trovare percorso fra armadi
+arc_p(L1, L2) :- percorso(L1, L2, _).
+
+% rimasto(+Arm, +Art, +Num) is det
+% significato: nell'armadio Arm, sono presenti almeno Num copie
+% dell'articolo Art
+% rimasto(Arm, Art, Num) :- contiene(Arm, Art, Qta), Num =< Qta.
+
+% prendi(+R, +Art, +N, -Np, +SLib, +S1, -S2)
+% significato: prendi N articoli Art
+% (SLib è lo spazio libero sul robot)
+% e aggiorna correttamente lo stato (da S1 a S2)
+% Np è la quantità effettivamente presa
+% (uguale a N o a SLib)
+prendi(R, Art, N, N, SLib, S1, S2) :-
+	SLib >= N, % spazio sul robot sufficiente per l'intero ordine
+	!,
+	ord_subtract(S1, [ordine(Art, N)], St1), %rimuovi ordine
+	ord_union(St1, [porta(R, Art, N)], S2). %aggiungi articolo trasportato
+
+prendi(R, Art, N, SLib, SLib, S1, S2) :-
+	SLib < N, % spazio sul robot insufficiente per l'intero ordine
+	Qr is N - SLib, % quantità ancora da recuperare
+	ord_subtract(S1, [ordine(Art, N)], St1), %rimuovi ordine
+	ord_union(St1, [ordine(Art, Qr)], St2), %aggiorna ordine
+	ord_union(St2, [porta(R, Art, SLib)], S2). %aggiungi articolo trasportato
+
+% spazio_libero(+R, +S, -SLib)
+% significato: il robot ha spazio libero SLib nello stato S
+spazio_libero(R, S, SLib) :-
+	occupaz(R, S, Sp), %Sp è lo spazio occupato
+	capacita(C), %C è la capacità di un robot
+	SLib is C - Sp. % Sr è lo spazio rimasto
+
+% occupaz(+R, +S, -N)
+% significato: nello stato S, il robot R sta trasportando N articoli
+occupaz(R, S, Q) :-
+	occupaz(R, S, 0, Q).
+occupaz(_, [], Acc, Acc) :-
+	!.
+occupaz(R, [porta(R, _, Q)|C], PQ, NQ) :-
+	!,
+	NQ1 is Q + PQ,
+	occupaz(R, C, NQ1, NQ).
+occupaz(R, [_|C], PQ, NQ) :-
+	occupaz(R, C, PQ, NQ).
+
+% pos: costruisce posizioni iniziali robot
+pos(Robot, posizione(Robot, l(b))).
+
+% check_orders(+S1, -S2)
+% significato: dallo stato S1, ottieni lo stato S2 dopo aver unificato
+% ordini multipli per lo stesso articolo e aver modificato ordini per
+% cui non sono presenti scorte sufficienti
+:- dynamic val_dest/1.
+check_orders(S1, S2) :-
+	unify_ord(S1, St1),
+	mod_ord(St1, S2),
+	build_valid_dest(S2).
+% unifica ordini diversi per il medesimo articolo
+unify_ord([], []).
+unify_ord([ordine(A, Qa)|C], S) :-
+        tot_ord(ordine(A, Qa), C, NL, Q), % cerca altri ordini per medesimo articolo
+	unify_ord(NL, S2), % chiamata ricorsiva sul resto della lista
+	append(S2, [ordine(A, Q)], S). %unifica risultati
+% calcola la qta ordinata totale per un articolo
+tot_ord(ordine(_, Q), [], [], Q).
+tot_ord(ordine(A, Qa), [ordine(A, Q1)|C], NL, Q) :-
+	!,
+	tot_ord(ordine(A, Qa), C, NL, Q2),
+	Q is Q1 + Q2.
+tot_ord(ordine(A, Qa), [T|C], NL, Q) :-
+	tot_ord(ordine(A, Qa), C, L, Q),
+	append(L, [T], NL).
+% modifica ordini se scorte insufficienti
+mod_ord([], []).
+mod_ord([ordine(A, Q)|C], S) :-
+	contiene(_, A, Qa),
+	Q > Qa,
+	!,
+	mod_ord(C, St1),
+	append(St1, [scorte_ins(A, Q, Qa), ordine(A, Qa)], S).
+mod_ord([T|C], S) :-
+	mod_ord(C, St1),
+	append(St1, [T], S).
+% costruisci lista destinazioni valide
+build_valid_dest(S) :-
+	retractall(val_dest(_)),
+	bvdest(S).
+bvdest([]).
+bvdest([ordine(Art, _)|C]) :-
+	!,
+	contiene(A, Art, _),
+	assert(val_dest(l(A))),
+	bvdest(C).
+bvdest([_|C]) :-
+	bvdest(C).
+
+% DEFINIZIONE ARCHI AZIONI
+% Chiamata iniziale, trattamento dati in input
+arc(st(Robots, starting, S1), st(Robots, initialized, S2)) :-
+	!,
+	check_orders(S1, St1), % verifica ordini immessi
+	maplist(pos, Robots, PosRobots), % costruisco posizioni iniziali
+	append(St1, PosRobots, St2), % costruisco stato iniziale, ordini+posizioni
+	list_to_ord_set(St2, S2). % converti in lista ordinata
+
+% Chiamata a predicato ricorsivo per determinare azione di ogni robot
+arc(st(R, OActs, S1), st(R, NActs, S2)) :-
+	action(R, S1, S2, OActs, NActs).
+
+% predicato ricorsivo per selezione azione da far eseguire ad ogni robot
+action([], S1, S1, _, []).
+action([T|C], S1, S2, [OA1|OActs], [NA1|NActs]) :-
+	act_s(T, S1, St1, OA1, NA1),
+	action(C, St1, S2, OActs, NActs).
+action([T|C], S1, S2, initialized, [NA1|NActs]) :-
+	act_s(T, S1, St1, initialized, NA1),
+	action(C, St1, S2, initialized, NActs).
+
+% act_s: selettore azione
+% act_s(+R, +S1, -S2, +OAct, -NAct): Il robot R, dato lo stato S1
+% e l'azione OAct eseguita al passo precedente,
+% compie l'azione NAct e passa allo stato S2
+
+% prendi articolo da armadio
+act_s(R, S1, S2, OAct, prende(R, Art, Np)) :-
+	\+(OAct = no_azione(R)), %il robot può fermarsi solo alla fine
+	ord_memberchk(posizione(R, l(Arm)), S1), %robot è all'armadio Arm...
+	contiene(Arm, Art, _), %... e l'articolo Art è contenuto in Arm..
+	ord_memberchk(ordine(Art, N), S1), %... e deve prendere l'articolo Art...
+	spazio_libero(R, S1, SLib), %...e il robot ha spazio libero SLib...
+	SLib > 0, % ...maggiore di zero
+	prendi(R, Art, N, Np, SLib, S1, S2). %prende l'articolo
+
+% sposta verso un armadio
+act_s(R, S1, S2, OAct, va(R, L1, l(A))) :-
+	\+(OAct = no_azione(R)), %il robot può fermarsi solo alla fine
+	\+(OAct = va(_, _, _)), %non si possono eseguire due movimenti di fila
+	ord_memberchk(posizione(R, L1), S1), %Robot in posizione L1...
+	val_dest(l(A)),
+	\+ord_memberchk(posizione(_, l(A)), S1), %... e non c'è un altro robot alla dest.
+	ord_subtract(S1, [posizione(R, L1)], S),
+	ord_union(S, [posizione(R, l(A))], S2).
+
+% scarica articolo al banco
+act_s(R, S1, S2, OAct, scarica(R, Art, Num)) :-
+	\+(OAct = no_azione(R)), %il robot può fermarsi solo alla fine
+	ord_memberchk(posizione(R, l(b)), S1), %controlla posizione
+	ord_memberchk(porta(R, Art, Num), S1), %controlla articolo trasportato
+	\+ord_memberchk(recuperato(Art ,_), S1), %controlla se articolo già recuperato
+	!,
+	ord_subtract(S1, [porta(R, Art, Num)], St1),
+	ord_union(St1, [recuperato(Art, Num)], S2).
+
+act_s(R, S1, S2, OAct, scarica(R, Art, Num)) :-
+	\+(OAct = no_azione(R)), %il robot può fermarsi solo alla fine
+	ord_memberchk(posizione(R, l(b)), S1), %controlla posizione
+	ord_memberchk(porta(R, Art, Num), S1), %controlla articolo trasportato
+	ord_memberchk(recuperato(Art, Q), S1), %controlla se articolo già recuperato
+	Qtot is Q + Num,
+	ord_subtract(S1, [porta(R, Art, Num)], St1),
+	ord_subtract(St1, [recuperato(Art, Q)], St2),
+	ord_union(St2, [recuperato(Art, Qtot)], S2).
+
+% vai al banco
+act_s(R, S1, S2, OAct, va(R, L1, l(b))) :-
+	\+(OAct = va(_, _, _)), %non si possono eseguire due movimenti di fila
+	\+(OAct = no_azione(R)), %il robot può fermarsi solo alla fine
+	ord_memberchk(porta(R, _, _), S1), %il robot può andare al banco se trasporta articoli
+	ord_memberchk(posizione(R, L1), S1), %controlla posizione
+	ord_subtract(S1, [posizione(R, L1)], S),
+	ord_union(S, [posizione(R, l(b))], S2).
+
+act_s(R, S1, S2, OAct, va(R, L1, l(b))) :-
+	\+(OAct = va(_, _, _)), %non si possono eseguire due movimenti di fila
+	\+(OAct = no_azione(R)), %il robot può fermarsi solo alla fine
+	\+ord_memberchk(ordine(_, _), S1), %il robot può andare al banco se non ci sono altri ordini
+	ord_memberchk(posizione(R, L1), S1), %controlla posizione
+	ord_subtract(S1, [posizione(R, L1)], S),
+	ord_union(S, [posizione(R, l(b))], S2).
+
+% non eseguire nessun azione
+act_s(R, S1, S1, _, no_azione(R)).
+
+% VICINI
+vicini(st(R, A, S), L) :-
+	build_valid_dest(S),
+	setof(V, arc(st(R, A, S), V), L), !.
+vicini(l(L), LV) :- setof(V, arc_p(l(L), V), LV), !.
+vicini(_, []).
+
+% TROVATO
+trovato(st(_, _, S)) :-
+	\+(ord_memberchk(ordine(_, _), S)),
+	\+(ord_memberchk(porta(_, _, _), S)),
+	\+(ord_memberchk(posizione(_, a(_)), S)).
+trovato(l(L)) :- dest(l(L)).
+:- dynamic dest/1.
+% COSTO
+costo(st(_, _, _), st(_, Acts, _), C) :-
+	cos_r(Acts, C).
+costo(l(L1), l(L2), C) :- percorso(l(L1), l(L2), C).
+cos_r([], 0).
+cos_r(initialized, 0).
+cos_r([T|C], V) :-
+	def_costo(T, V),
+	cos_r(C, Vt),
+	V >= Vt.
+cos_r([T|C], V) :-
+	def_costo(T, Vt),
+	cos_r(C, V),
+	V >= Vt.
+
+% calc_dist salva percorsi già calcolati fra armadi
+% e permette di risparmiare tempo di calcolo
+:- dynamic calc_dist/3.
+:- dynamic mult_fact/1.
+:- retractall(mult_fact(_)).
+
+mult_fact(1).
+
+def_costo(va(_, L1, L2), C) :-
+	calc_dist(L1, L2, C),
+	!.
+def_costo(va(_, L1, L2), C) :-
+	assert(dest(L2)),
+	solve(L1, nc(L2, _, C)),
+	assert(calc_dist(L1, L2, C)),
+	assert(calc_dist(L2, L1, C)),
+	retractall(dest(_)).
+def_costo(prende(_, _, N), C) :-
+	mult_fact(MF),
+	C is N * MF.
+def_costo(scarica(_, _, N), C) :-
+	mult_fact(MF),
+	C is N * MF.
+def_costo(no_azione(_), 0).
+
+% EQ
+eq(st(_,_,S), st(_,_,S)).
+eq(l(L), l(L)).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
